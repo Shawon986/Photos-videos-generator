@@ -17,7 +17,6 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db as appDb } from "@/lib/db";
-import { PrismaClient as PgPrismaClient } from "../node_modules/.prisma-pg/client";
 import { env } from "@/lib/env";
 import { getStorage } from "@/lib/storage";
 import { buildStorageKey, resolveUnderRoot } from "@/lib/storage/provider";
@@ -95,10 +94,31 @@ const SEED: SeedEntry[] = [
 
 // The local @prisma/client is generated for SQLite and rejects Postgres
 // URLs. To seed the production (Neon) database, generate an isolated
-// Postgres client first (prisma generate --schema prisma/schema.pg-seed.prisma)
-// and run with SEED_PG_CLIENT=1.
+// Postgres client first:
+//   ./node_modules/.bin/prisma generate --schema prisma/schema.pg-seed.prisma
+// then run with SEED_PG_CLIENT=1. The PG client is loaded lazily via
+// require() so `next build` never needs the directory to exist (it is a
+// local-only artifact, absent on CI/Vercel).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+function loadPgClient(): unknown {
+  try {
+    const mod = require("../node_modules/.prisma-pg/client") as typeof import("@prisma/client");
+    return new mod.PrismaClient();
+  } catch {
+    return null;
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dev script; the two client types don't union cleanly
-const db: any = process.env.SEED_PG_CLIENT === "1" ? new PgPrismaClient() : appDb;
+const db: any =
+  process.env.SEED_PG_CLIENT === "1"
+    ? (loadPgClient() ??
+      (() => {
+        throw new Error(
+          "Postgres client not generated — run: ./node_modules/.bin/prisma generate --schema prisma/schema.pg-seed.prisma",
+        );
+      })())
+    : appDb;
 
 async function main() {
   // 1. Demo user.

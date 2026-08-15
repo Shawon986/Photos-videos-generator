@@ -40,3 +40,6 @@ blob-report/
 
 # typescript
 *.tsbuildinfo
+
+.vercel
+.env*
