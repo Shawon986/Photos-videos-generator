@@ -1,16 +1,21 @@
-// VisionForge AI — Prisma schema (production: PostgreSQL).
+// VisionForge AI — Prisma schema (development: SQLite).
 //
-// Usage:
-//   1. Copy this file over prisma/schema.prisma
-//   2. Set DATABASE_URL="postgresql://user:password@host:5432/visionforge?schema=public"
-//   3. npx prisma migrate deploy   (or `prisma migrate dev` locally)
+// PostgreSQL production schema lives in `schema.postgres.prisma`.
+// To switch to PostgreSQL:
+//   1. Copy schema.postgres.prisma over schema.prisma
+//   2. Set DATABASE_URL to your Postgres connection string
+//   3. npx prisma migrate deploy (or `prisma migrate dev` locally)
+//
+// NOTE: generation/job statuses are Strings (not enums) so the same schema
+// runs on SQLite and PostgreSQL. Valid values are enforced by Zod at the API
+// boundary and listed in lib/constants.ts.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -146,12 +151,12 @@ model Favorite {
 model Share {
   id           String   @id @default(cuid())
   generationId String   @unique
-  userId       String
   viewCount    Int      @default(0)
   createdAt    DateTime @default(now())
 
   generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
 }
 
 // ---------------------------------------------------------------------------
