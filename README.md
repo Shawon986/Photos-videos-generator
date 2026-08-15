@@ -60,7 +60,8 @@ Every variable is documented inside `.env.example`. The important ones:
 | `HUGGINGFACE_API_KEY` | HF Inference token (free tier) |
 | `POLLINATIONS_IMAGE_URL` | Free no-key image API (defaults to image.pollinations.ai) |
 | `DEMO_MODE` | `true` = labelled demo previews when no provider is reachable |
-| `STORAGE_PROVIDER` / `UPLOAD_DIR` | File storage location |
+| `STORAGE_PROVIDER` / `UPLOAD_DIR` | `local` (disk) or `vercel-blob` (Vercel) + local dir |
+| `BLOB_READ_WRITE_TOKEN` / `CRON_SECRET` | Vercel Blob token + cron endpoint secret |
 | `IMAGE_GENERATIONS_PER_HOUR` / `VIDEO_GENERATIONS_PER_HOUR` | Rate limits |
 
 > **API keys live only in `.env` on the server.** They are never bundled to
@@ -77,20 +78,20 @@ npx prisma migrate dev
 
 **PostgreSQL (production):**
 
-1. Create a database: `createdb visionforge`
-2. Replace `prisma/schema.prisma` with the Postgres variant:
+1. Create a database (e.g. [Neon](https://neon.tech)) and copy its
+   connection string.
+2. Push the Postgres schema **without touching the local one** (the
+   `--schema` flag targets the Postgres variant directly; add
+   `--skip-generate` to keep the local SQLite client):
 
    ```bash
-   cp prisma/schema.postgres.prisma prisma/schema.prisma
+   DATABASE_URL="postgresql://…" ./node_modules/.bin/prisma db push --schema prisma/schema.postgres.prisma
    ```
 
-3. Set `DATABASE_URL="postgresql://user:password@localhost:5432/visionforge?schema=public"`
-4. Run:
-
-   ```bash
-   npx prisma generate
-   npx prisma migrate deploy
-   ```
+3. On Vercel, the `vercel-build` script swaps in the Postgres schema and
+   runs `prisma generate` automatically at build time — nothing to change
+   in the repo. For other hosts, replace `schema.prisma` with the Postgres
+   variant and run `prisma migrate deploy`.
 
 ## 6. Running the app
 
@@ -233,10 +234,11 @@ User submits prompt
     → API validates (Zod) → moderates → rate-limits
     → creates Generation + GenerationJob (status QUEUED)
     → returns { generationId, queuePosition } immediately
-Worker (in-process in dev, `npm run worker` in production)
+Worker (in-process interval in dev; inline tick after each create + daily
+cron on Vercel; `npm run worker` for long-running hosts)
     → claims oldest QUEUED job
     → calls the configured AI provider
-    → stores media under ./uploads (images / videos / thumbnails / uploads)
+    → stores media via the StorageProvider (local disk or Vercel Blob)
     → marks COMPLETED (or FAILED with a user-safe message)
 Frontend polls GET /api/generations/:id every 2.5s
 ```
@@ -248,29 +250,82 @@ invents percentages. Cancellation aborts queued and in-flight work.
 For Redis/BullMQ at scale, replace the claim/complete primitives in
 `lib/jobs/queue.ts` — API routes only depend on `enqueueJob`/`updateJobProgress`.
 
-## 11. Production deployment
+## 11. Production deployment (Vercel)
 
-1. PostgreSQL + `prisma/schema.postgres.prisma` (see §5).
-2. `npm run build && npm start` for the web server.
-3. Run the worker separately: `npm run worker` (set
-   `WORKER_AUTO_START=false` in `.env`).
-4. Storage: the local provider writes to disk — for multi-instance or
-   serverless deployment, implement `StorageProvider` in `lib/storage/`
-   for S3 / Cloudflare R2 / Supabase Storage and register it in
-   `lib/storage/index.ts`. Media is served through `/api/files/...`, so the
-   storage backend is fully abstracted from the rest of the app.
-5. Set `AUTH_SECRET` to a strong random value and serve over HTTPS.
-6. Rate limits are per-user/per-hour via env vars; scale-out deployments
-   should back the IP limiter with Redis (`lib/rate-limit/index.ts`).
+The app is Vercel-ready: use **Neon Postgres** for the database and
+**Vercel Blob** for storage (SQLite and local disk don't work on Vercel —
+its filesystem is read-only and ephemeral). Background jobs are processed
+inline in the create request, since Vercel has no background processes.
+
+1. **Create a Postgres database** at <https://neon.tech> (free tier) and
+   copy its pooled connection string (`postgresql://…`).
+
+2. **Push the Postgres schema** (one-time, from this repo):
+
+   ```bash
+   DATABASE_URL="postgresql://…" ./node_modules/.bin/prisma db push --schema prisma/schema.postgres.prisma --skip-generate
+   ```
+
+   The `vercel-build` script swaps in the Postgres schema and runs
+   `prisma generate` automatically during the Vercel build — the local
+   repo stays on SQLite for development. (The SQLite migrations in
+   `prisma/migrations/` are for local dev only.)
+
+3. **Create a Blob store**: Vercel dashboard → your project → **Storage** →
+   **Create** → **Blob**. Copy the `BLOB_READ_WRITE_TOKEN`.
+
+4. **Set environment variables** in Vercel → Settings → Environment
+   Variables (full list in `.env.production.example`):
+   `DATABASE_URL`, `AUTH_SECRET` (generate with `openssl rand -base64 32`),
+   `STORAGE_PROVIDER=vercel-blob`, `BLOB_READ_WRITE_TOKEN`, `CRON_SECRET`
+   (any long random string), `IMAGE_PROVIDER=pollinations`,
+   `DEMO_MODE=true`.
+
+5. **Deploy.** `vercel.json` registers a daily cron at `/api/cron/process`
+   as a catch-up sweep.
+
+**How jobs run on Vercel:** the create request enqueues the job and runs one
+worker pass in the same function invocation. Vercel functions keep executing
+after the response is sent, so the job processes inline. If the instance is
+reaped first, the daily cron — or any later request, which boots the worker
+again — recovers it (jobs stuck in PROCESSING for 30+ min are auto-requeued).
+
+- On the **Hobby** plan cron runs at most **once per day** with a short
+  timeout — it's only a safety net. On **Pro**, change `vercel.json` to
+  `"schedule": "*/2 * * * *"` for near-real-time catch-up.
+- Demo media ships in `public/demo/` — no extra configuration.
+- Vercel limits server request bodies to 4.5 MB — set
+  `MAX_UPLOAD_BYTES=4500000` (uploads over that size need client uploads).
+- **Seed production content** (demo account + Explore showcase, assets go
+  straight to Blob):
+
+  ```bash
+  ./node_modules/.bin/prisma generate --schema prisma/schema.pg-seed.prisma
+  SEED_PG_CLIENT=1 \
+  DATABASE_URL="postgresql://…" \
+  STORAGE_PROVIDER=vercel-blob \
+  BLOB_READ_WRITE_TOKEN="vercel_blob_rw_…" \
+    ./node_modules/.bin/tsx scripts/seed-demo.ts
+  ```
+
+  (`SEED_PG_CLIENT=1` uses an isolated Postgres client so local dev keeps
+  its SQLite client.)
+- For a long-running (non-serverless) host, the original deployment mode
+  still works: `npm run build && npm start` + `npm run worker` with
+  `WORKER_AUTO_START=false`.
 
 ## 12. Storage configuration
 
 ```env
-STORAGE_PROVIDER=local
+STORAGE_PROVIDER=local            # filesystem (development)
 UPLOAD_DIR=./uploads
+
+# or, on Vercel (required — disk is read-only):
+STORAGE_PROVIDER=vercel-blob
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_…
 ```
 
-Layout:
+Local layout:
 
 ```text
 uploads/
@@ -282,14 +337,17 @@ uploads/
 
 Files are served through `app/api/files/[...path]/route.ts` with
 authorization: generation outputs are visible to the owner and (when
-shared) to everyone; uploads are owner-only. To add S3/R2, implement the
+shared) to everyone; uploads are owner-only. Media URLs are always
+app-relative (`/api/files/…`), so switching between `local` and
+`vercel-blob` does not invalidate stored rows. To add S3/R2, implement the
 `StorageProvider` interface (`lib/storage/provider.ts`).
 
 ## 13. Testing
 
 ```bash
-npm test          # 61 Vitest unit tests: validation, safety, rate limits,
-                  # uploads, provider resolution/failures, ownership, hashing
+npm test          # Vitest unit tests: validation, safety, rate limits,
+                  # uploads, provider resolution/failures, ownership, hashing,
+                  # storage providers (local + Vercel Blob), cron auth
 ```
 
 End-to-end (Playwright):

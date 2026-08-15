@@ -40,8 +40,13 @@ const envSchema = z.object({
     .optional()
     .default("true")
     .transform((v) => v === "true"),
-  STORAGE_PROVIDER: z.string().optional().default("local"),
+  STORAGE_PROVIDER: z.enum(["local", "vercel-blob"]).optional().default("local"),
   UPLOAD_DIR: z.string().optional().default("./uploads"),
+  // Vercel Blob read/write token — required when STORAGE_PROVIDER=vercel-blob
+  // (vercel.com → project → Storage → Create Blob store).
+  BLOB_READ_WRITE_TOKEN: z.string().optional().default(""),
+  // Secret for the Vercel cron endpoint (any long random string).
+  CRON_SECRET: z.string().optional().default(""),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().optional().default(20 * 1024 * 1024),
   IMAGE_GENERATIONS_PER_HOUR: z.coerce.number().int().min(0).optional().default(10),
   VIDEO_GENERATIONS_PER_HOUR: z.coerce.number().int().min(0).optional().default(3),
@@ -52,6 +57,14 @@ const envSchema = z.object({
     .transform((v) => v === "true"),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(500).optional().default(2000),
   JOB_MAX_ATTEMPTS: z.coerce.number().int().min(1).optional().default(2),
+}).superRefine((data, ctx) => {
+  if (data.STORAGE_PROVIDER === "vercel-blob" && !data.BLOB_READ_WRITE_TOKEN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["BLOB_READ_WRITE_TOKEN"],
+      message: "BLOB_READ_WRITE_TOKEN is required when STORAGE_PROVIDER=vercel-blob",
+    });
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);

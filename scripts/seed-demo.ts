@@ -16,7 +16,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
+import { db as appDb } from "@/lib/db";
+import { PrismaClient as PgPrismaClient } from "../node_modules/.prisma-pg/client";
 import { env } from "@/lib/env";
 import { getStorage } from "@/lib/storage";
 import { buildStorageKey, resolveUnderRoot } from "@/lib/storage/provider";
@@ -92,6 +93,13 @@ const SEED: SeedEntry[] = [
   },
 ];
 
+// The local @prisma/client is generated for SQLite and rejects Postgres
+// URLs. To seed the production (Neon) database, generate an isolated
+// Postgres client first (prisma generate --schema prisma/schema.pg-seed.prisma)
+// and run with SEED_PG_CLIENT=1.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dev script; the two client types don't union cleanly
+const db: any = process.env.SEED_PG_CLIENT === "1" ? new PgPrismaClient() : appDb;
+
 async function main() {
   // 1. Demo user.
   let user = await db.user.findUnique({ where: { email: DEMO_EMAIL } });
@@ -110,7 +118,7 @@ async function main() {
     select: { id: true },
   });
   if (existing.length > 0) {
-    await db.generation.deleteMany({ where: { id: { in: existing.map((g) => g.id) } } });
+    await db.generation.deleteMany({ where: { id: { in: existing.map((g: { id: string }) => g.id) } } });
     const root = path.resolve(env.UPLOAD_DIR);
     for (const g of existing) {
       for (const dir of ["images", "videos"]) {

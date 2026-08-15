@@ -292,6 +292,15 @@ async function poll(): Promise<void> {
   }
 }
 
+/**
+ * Run one worker poll pass synchronously (up to 5 jobs). Used by:
+ * — the create-generation pipeline, so jobs start processing within the
+ *   serverless invocation that queued them (Vercel has no background
+ *   processes; the response returns while the work continues)
+ * — the Vercel cron endpoint /api/cron/process as a catch-up sweep.
+ */
+export const workerTick = poll;
+
 let started = false;
 
 export function startWorker(): void {

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { ensureWorkerStarted } from "@/lib/workers/ensure-worker";
+import { workerTick } from "@/lib/workers/generation-worker";
 import { moderatePrompt, sanitizePromptText } from "@/lib/safety/prompt-moderation";
 import { enforceUserGenerationQuota, enforceIpBurstLimit } from "@/lib/rate-limit";
 import { enqueueJob } from "@/lib/jobs/queue";
@@ -96,6 +97,13 @@ export async function createGeneration(input: CreateGenerationInput): Promise<{
   });
 
   const { queuePosition } = await enqueueJob(generation.id, env.JOB_MAX_ATTEMPTS);
+
+  // Kick one worker pass in this invocation. On serverless hosts (Vercel)
+  // there is no background process, but the function keeps running after
+  // the response — this is what actually processes the job there. Locally
+  // it just makes the first job start immediately. Concurrent ticks are
+  // guarded by the worker's internal polling flag.
+  void workerTick();
 
   return {
     generationId: generation.id,
