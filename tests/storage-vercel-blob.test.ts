@@ -61,6 +61,18 @@ describe("env validation", () => {
     process.env = { ...BASE_ENV, STORAGE_PROVIDER: "vercel-blob", BLOB_READ_WRITE_TOKEN: "" };
     await expect(import("@/lib/env")).rejects.toThrow(/Invalid environment configuration/);
   });
+
+  it("treats empty endpoint URLs as unset (falls back to defaults)", async () => {
+    vi.resetModules();
+    process.env = {
+      ...BASE_ENV,
+      POLLINATIONS_IMAGE_URL: "",
+      HF_INFERENCE_URL: "",
+    };
+    const { env } = await import("@/lib/env");
+    expect(env.POLLINATIONS_IMAGE_URL).toBe("https://image.pollinations.ai");
+    expect(env.HF_INFERENCE_URL).toBe("https://api-inference.huggingface.co");
+  });
 });
 
 describe("vercel blob adapter", () => {

@@ -19,15 +19,22 @@ const envSchema = z.object({
   HUGGINGFACE_API_KEY: z.string().optional().default(""),
   // Base URL of the Hugging Face Inference API — override when the default
   // endpoint is unreachable (mirrors, regional gateways, proxies).
+  // Empty string counts as unset (dashboard imports often leave it "").
   HF_INFERENCE_URL: z
     .string()
     .optional()
-    .default("https://api-inference.huggingface.co"),
+    .default("https://api-inference.huggingface.co")
+    .transform((v) => (v.trim() ? v : "https://api-inference.huggingface.co")),
   // OpenAI-compatible image API (SiliconFlow, Together, Novita, ...).
   OPENAI_COMPAT_IMAGE_URL: z.string().optional().default(""),
   OPENAI_COMPAT_API_KEY: z.string().optional().default(""),
   // Pollinations — free, no-key image API (https://pollinations.ai).
-  POLLINATIONS_IMAGE_URL: z.string().optional().default("https://image.pollinations.ai"),
+  // Empty string counts as unset (dashboard imports often leave it "").
+  POLLINATIONS_IMAGE_URL: z
+    .string()
+    .optional()
+    .default("https://image.pollinations.ai")
+    .transform((v) => (v.trim() ? v : "https://image.pollinations.ai")),
   // Optional app identifier sent as ?referrer= (helps the community service
   // attribute traffic; not required).
   POLLINATIONS_REFERRER: z.string().optional().default(""),
