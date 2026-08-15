@@ -5,6 +5,7 @@ import {
   enforceIpBurstLimit,
   hourlyLimitFor,
   isWithinWindow,
+  retryAfterSecondsForOldest,
 } from "@/lib/rate-limit";
 
 describe("hourly window math", () => {
@@ -26,6 +27,19 @@ describe("hourly quota config", () => {
     expect(hourlyLimitFor("IMAGE")).toBe(10);
     expect(hourlyLimitFor("VIDEO")).toBe(3);
     expect(hourlyLimitFor("IMAGE_TO_VIDEO")).toBe(3);
+  });
+});
+
+describe("retryAfterSecondsForOldest", () => {
+  const now = new Date("2026-08-15T12:00:00Z");
+
+  it("returns the remaining window time for the oldest generation", () => {
+    expect(retryAfterSecondsForOldest(new Date("2026-08-15T11:10:00Z"), now)).toBe(600);
+    expect(retryAfterSecondsForOldest(new Date("2026-08-15T11:59:30Z"), now)).toBe(3570);
+  });
+
+  it("never returns below 1 second", () => {
+    expect(retryAfterSecondsForOldest(new Date("2026-08-15T11:00:00.001Z"), now)).toBe(1);
   });
 });
 

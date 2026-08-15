@@ -55,6 +55,13 @@ export async function getHourlyGenerationCount(userId: string, type: GenerationT
   });
 }
 
+const QUOTA_WINDOW_MS = 3_600_000;
+
+/** Seconds until the oldest in-window generation leaves the sliding window. */
+export function retryAfterSecondsForOldest(oldest: Date, now: Date): number {
+  return Math.max(1, Math.ceil((oldest.getTime() + QUOTA_WINDOW_MS - now.getTime()) / 1000));
+}
+
 export async function enforceUserGenerationQuota(
   userId: string,
   type: GenerationType,
@@ -69,9 +76,24 @@ export async function enforceUserGenerationQuota(
   }
   const used = await getHourlyGenerationCount(userId, type);
   if (used >= limit) {
+    // Compute when the quota actually resets: the oldest generation inside
+    // the window falls out of it, freeing a slot.
+    const oldest = await db.generation.findFirst({
+      where: {
+        userId,
+        type: type === "IMAGE" ? "IMAGE" : { in: ["VIDEO", "IMAGE_TO_VIDEO"] },
+        createdAt: { gte: new Date(Date.now() - QUOTA_WINDOW_MS) },
+        status: { not: "CANCELLED" },
+      },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    });
+    const retryAfterSeconds = oldest
+      ? retryAfterSecondsForOldest(oldest.createdAt, new Date())
+      : 3_600;
     throw new RateLimitError(
-      "You've reached your generation limit. Please try again later.",
-      3_600,
+      "You've reached your hourly generation limit.",
+      retryAfterSeconds,
       "user_quota",
     );
   }

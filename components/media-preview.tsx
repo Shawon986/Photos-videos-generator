@@ -34,6 +34,19 @@ export function MediaPreview({
     <div className={cn("relative overflow-hidden", className)}>
       {isVideo ? (
         <video
+          ref={(el) => {
+            // React does not render the `muted` attribute into the DOM,
+            // and iOS Safari refuses to autoplay videos without it. Force
+            // both the attribute and the property, then kick playback.
+            if (el && autoPlay) {
+              el.muted = true;
+              el.defaultMuted = true;
+              el.setAttribute("muted", "");
+              void el.play().catch(() => {
+                /* autoplay can be blocked — the user can still tap play */
+              });
+            }
+          }}
           src={src}
           className="h-full w-full object-cover"
           autoPlay={autoPlay}
@@ -41,7 +54,7 @@ export function MediaPreview({
           loop={autoPlay}
           playsInline
           controls={!autoPlay}
-          preload={autoPlay ? "metadata" : "none"}
+          preload={autoPlay ? "auto" : "none"}
         >
           Your browser does not support video playback.
         </video>

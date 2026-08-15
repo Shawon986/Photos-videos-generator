@@ -100,3 +100,41 @@ export function truncateMiddle(text: string, max: number): string {
   const half = Math.floor((max - 1) / 2);
   return `${text.slice(0, half)}…${text.slice(-half)}`;
 }
+
+export interface ByteRange {
+  start: number;
+  end: number; // inclusive
+}
+
+/**
+ * Parse an HTTP Range header ("bytes=start-end") against a total size.
+ * Returns null for unsatisfiable/malformed ranges.
+ *
+ * Used by /api/files so iOS Safari (which requires byte-range support for
+ * <video>) can stream media with 206 responses.
+ */
+export function parseByteRange(header: string | null, total: number): ByteRange | null {
+  if (!header || total <= 0) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+  const [, startRaw, endRaw] = match;
+
+  let start: number;
+  let end: number;
+  if (startRaw === "" && endRaw === "") {
+    return null;
+  } else if (startRaw === "") {
+    // Suffix range: last N bytes.
+    const suffix = parseInt(endRaw, 10);
+    if (Number.isNaN(suffix) || suffix <= 0) return null;
+    start = Math.max(0, total - suffix);
+    end = total - 1;
+  } else {
+    start = parseInt(startRaw, 10);
+    end = endRaw === "" ? total - 1 : parseInt(endRaw, 10);
+    if (Number.isNaN(start) || Number.isNaN(end)) return null;
+    end = Math.min(end, total - 1);
+  }
+  if (start < 0 || end < start || start >= total) return null;
+  return { start, end };
+}

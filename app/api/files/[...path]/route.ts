@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
+import { parseByteRange } from "@/lib/utils";
 import { handleApiError, notFound, unauthorized } from "@/lib/api-helpers";
 
 /**
@@ -28,7 +29,7 @@ const MIME_BY_EXT: Record<string, string> = {
 };
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   try {
@@ -68,13 +69,34 @@ export async function GET(
 
     const ext = filename.includes(".") ? `.${filename.split(".").pop()?.toLowerCase()}` : "";
     const mimeType = MIME_BY_EXT[ext] ?? "application/octet-stream";
+    const total = data.byteLength;
+
+    const baseHeaders = {
+      "Content-Type": mimeType,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "private, max-age=3600",
+    };
+
+    // Byte-range support: iOS Safari requires it to stream <video> — it
+    // sends "Range: bytes=0-1" probes and full 206 responses when seeking.
+    const range = parseByteRange(request.headers.get("range"), total);
+    if (range) {
+      const chunk = data.subarray(range.start, range.end + 1);
+      return new NextResponse(new Uint8Array(chunk), {
+        status: 206,
+        headers: {
+          ...baseHeaders,
+          "Content-Range": `bytes ${range.start}-${range.end}/${total}`,
+          "Content-Length": String(chunk.byteLength),
+        },
+      });
+    }
 
     return new NextResponse(new Uint8Array(data), {
       status: 200,
       headers: {
-        "Content-Type": mimeType,
-        "Content-Length": String(data.byteLength),
-        "Cache-Control": "private, max-age=3600",
+        ...baseHeaders,
+        "Content-Length": String(total),
       },
     });
   } catch (err) {
