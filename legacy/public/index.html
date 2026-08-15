@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Prompt Image & Video Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <h1>Prompt Image & Video Generator</h1>
+    <header class="hero">
+      <div class="hero-inner">
+        <h1>Prompt Image & Video Generator</h1>
+        <p class="lead">Create stunning images and short videos from text prompts. Requires server-side `OPENAI_API_KEY` and `ffmpeg` for video.</p>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="controls card">
+        <div class="form-row">
+          <label for="prompt">Prompt</label>
+          <textarea id="prompt">A scenic landscape painting of mountains at sunrise</textarea>
+        </div>
+
+        <div class="form-row small">
+          <label for="size">Size</label>
+          <select id="size">
+            <option>512x512</option>
+            <option selected>1024x1024</option>
+          </select>
+
+          <label for="n">Images</label>
+          <input id="n" type="number" min="1" max="4" value="1">
+
+          <label for="preset">Preset</label>
+          <select id="preset">
+            <option value="">-- Select --</option>
+            <option value="A cinematic portrait of a warrior, dramatic lighting">Cinematic Portrait</option>
+            <option value="A futuristic city skyline at night, neon lights">Futuristic City</option>
+            <option value="A cozy cabin in snowy mountains, warm lights">Cozy Cabin</option>
+          </select>
+        </div>
+
+        <div class="form-row actions">
+          <button id="genImage" class="btn primary">Generate Image</button>
+          <button id="genVideo" class="btn outline">Generate Video</button>
+          <div id="spinner" class="spinner hidden" aria-hidden="true"></div>
+        </div>
+      </section>
+
+      <section class="results card">
+        <h2>Result</h2>
+        <div id="result" class="preview grid"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

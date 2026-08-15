@@ -1,0 +1,15 @@
+{
+  "name": "prompt-image-video-generator",
+  "version": "0.1.0",
+  "description": "Simple app to generate images and videos from prompts (uses OpenAI Images API + ffmpeg)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2"
+  }
+}

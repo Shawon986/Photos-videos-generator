@@ -1,0 +1,179 @@
+// VisionForge AI — Prisma schema (production: PostgreSQL).
+//
+// Usage:
+//   1. Copy this file over prisma/schema.prisma
+//   2. Set DATABASE_URL="postgresql://user:password@host:5432/visionforge?schema=public"
+//   3. npx prisma migrate deploy   (or `prisma migrate dev` locally)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Auth.js / NextAuth)
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  image        String?
+  role         String   @default("user") // user | admin
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  generations Generation[]
+  favorites   Favorite[]
+  shares      Share[]
+  accounts    Account[]
+  sessions    Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Generations
+// ---------------------------------------------------------------------------
+
+model Generation {
+  id             String   @id @default(cuid())
+  userId         String
+  type           String // IMAGE | VIDEO | IMAGE_TO_VIDEO
+  prompt         String
+  negativePrompt String?
+  model          String
+  provider       String
+  status         String   @default("QUEUED") // QUEUED | PROCESSING | COMPLETED | FAILED | CANCELLED
+  width          Int
+  height         Int
+  numImages      Int      @default(1)
+  duration       Int? // seconds, video only
+  seed           Int?
+  steps          Int?
+  guidanceScale  Float?
+  motionStrength Float?
+  quality        String?
+  isDemo         Boolean  @default(false)
+  resultUrl      String? // primary result (first asset)
+  thumbnailUrl   String?
+  sourceImageUrl String? // image-to-video input image
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets    GenerationAsset[]
+  jobs      GenerationJob[]
+  favorites Favorite[]
+  share     Share?
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([type])
+}
+
+model GenerationAsset {
+  id           String   @id @default(cuid())
+  generationId String?
+  userId       String? // set for UPLOAD assets (image-to-video inputs)
+  kind         String // RESULT | THUMBNAIL | UPLOAD
+  storageKey   String
+  url          String
+  mimeType     String
+  width        Int
+  height       Int
+  sizeBytes    Int
+  createdAt    DateTime @default(now())
+
+  generation Generation? @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@index([generationId])
+  @@index([userId, kind])
+}
+
+model Favorite {
+  id           String   @id @default(cuid())
+  userId       String
+  generationId String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, generationId])
+}
+
+model Share {
+  id           String   @id @default(cuid())
+  generationId String   @unique
+  userId       String
+  viewCount    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+model GenerationJob {
+  id            String    @id @default(cuid())
+  generationId  String    @unique
+  status        String    @default("QUEUED") // QUEUED | PROCESSING | COMPLETED | FAILED | CANCELLED
+  stage         String? // human-readable stage, e.g. "Loading AI model..."
+  progress      Int? // 0-100 when the provider reports it; null = unknown
+  attempt       Int       @default(0)
+  maxAttempts   Int       @default(2)
+  error         String?
+  queuePosition Int?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+}
