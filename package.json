@@ -10,7 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "vercel-build": "cp prisma/schema.postgres.prisma prisma/schema.prisma && prisma generate && next build",
+    "vercel-build": "node scripts/check-env.cjs && cp prisma/schema.postgres.prisma prisma/schema.prisma && prisma generate && next build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "worker": "tsx scripts/worker.ts",
